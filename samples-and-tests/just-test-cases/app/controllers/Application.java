@@ -96,11 +96,19 @@ public class Application extends Controller {
     }
     
     public static void dashboard(String client) {
-        
+        renderText(client);
     }
 
     public static void hello(String name) {
         render(name);
+    }
+
+    public static void helloWorld(String name) {
+        render("/Application/hello.html", name);
+    }
+
+    public static void helloSteph(String name) {
+        render("/Application/hello.html", name);
     }
 
     public static void yop() {

@@ -1,4 +1,4 @@
-h1. Test your application
+loadModels:h1. Test your application
 
 Creating automatic test suites for your application is a good way to make it robust. It allows you to work in a very agile way.
 
@@ -166,7 +166,7 @@ p(note). You can read more about Play and YAML in the "YAML manual page":yaml.
 
 For Selenium tests, you can use the @#{fixture /}@ tag:
 
-bc. #{fixture delete:'all', load:'data.yml' /}
+bc. #{fixture delete:'all', loadModels:'data.yml' /}
  
 #{selenium}
     
@@ -180,7 +180,7 @@ bc. Fixtures.loadModels("users.yml", "roles.yml", "permissions.yml");
 
 and for Selenium tests:
 
-bc. #{fixture delete:'all', load:['users.yml', 'roles.yml', 'permissions.yml'] /}
+bc. #{fixture delete:'all', loadModels:['users.yml', 'roles.yml', 'permissions.yml'] /}
 
 h2. <a name="running">Running the tests</a>
 
@@ -198,9 +198,9 @@ On the test runner page, each test is a link. You can ‘right click’ and ‘O
 
 When you run tests this way, Play will start with a special @test@ framework ID. So you can define special configurations in the @application.conf@ file.
 
-If you want several different test-configuration, you can use framework IDs matching the pattern @test-?.*@ (e.g: @test-special@).
-If you use a framework ID other then the default @test@, you must make sure ALL test configuration in @application.conf@ is available
-with that framework ID. When launching test with special test framework ID you do it like this: @play test --%test-your-special-id@
+If you want several different test configurations, you can use framework IDs matching the pattern @test-?.*@ (e.g: @test-special@).
+
+If you use a framework ID other then the default @test@, you must make sure ALL test configuration in @application.conf@ is available with that framework ID. When launching test with special test framework ID you do it like this: @play test --%test-your-special-id@
 
 For example:
 
@@ -223,6 +223,8 @@ So setting up a continuous integration system to test your application, could be
 * Check for the marker file @result.passed@ or @result.failed@ in the @/test-result@ directory
 
 Run these steps in a CRON tab, and you’re done!
+
+You can change the web browser compatibility mode used by the headless browser by configuring "headlessBrowser":configuration#headlessBrowser.
 
 p(note). **Continuing the discussion**
  

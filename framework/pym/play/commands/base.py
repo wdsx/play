@@ -8,6 +8,7 @@ import getopt
 import urllib2
 import webbrowser
 import time
+import signal
 
 from play.utils import *
 
@@ -119,14 +120,25 @@ def new(app, args, env, cmdloader=None):
     print "~ Have fun!"
     print "~"
 
+process = None
+
+def handle_sigterm(signum, frame):
+    global process
+    if 'process' in globals():
+        process.terminate()
+        sys.exit(0)
+
 def run(app, args):
+    global process
     app.check()
     
     print "~ Ctrl+C to stop"
     print "~ "
     java_cmd = app.java_cmd(args)
     try:
-        subprocess.call(java_cmd, env=os.environ)
+        process = subprocess.Popen (java_cmd, env=os.environ)
+        signal.signal(signal.SIGTERM, handle_sigterm)
+        process.wait()
     except OSError:
         print "Could not execute the java executable, please make sure the JAVA_HOME environment variable is set properly (the java executable should reside at JAVA_HOME/bin/java). "
         sys.exit(-1)
@@ -220,6 +232,10 @@ def autotest(app, args):
     # Run FirePhoque
     print "~"
 
+    headless_browser = ''
+    if app.readConf('headlessBrowser'):
+        headless_browser = app.readConf('headlessBrowser')
+
     fpcp = [os.path.join(app.play_env["basedir"], 'modules/testrunner/lib/play-testrunner.jar')]
     fpcp_libs = os.path.join(app.play_env["basedir"], 'modules/testrunner/firephoque')
     for jar in os.listdir(fpcp_libs):
@@ -228,7 +244,7 @@ def autotest(app, args):
     cp_args = ':'.join(fpcp)
     if os.name == 'nt':
         cp_args = ';'.join(fpcp)    
-    java_cmd = [app.java_path(), '-classpath', cp_args, '-Dapplication.url=%s://localhost:%s' % (protocol, http_port), 'play.modules.testrunner.FirePhoque']
+    java_cmd = [app.java_path(), '-classpath', cp_args, '-Dapplication.url=%s://localhost:%s' % (protocol, http_port), '-DheadlessBrowser=%s' % (headless_browser), 'play.modules.testrunner.FirePhoque']
     try:
         subprocess.call(java_cmd, env=os.environ)
     except OSError:
