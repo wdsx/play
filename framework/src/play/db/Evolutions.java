@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Stack;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Handles migration of data.
@@ -44,7 +46,8 @@ public class Evolutions extends PlayPlugin {
      * Indicates if evolutions is disabled in application.conf ("evolutions.enabled" property)
      */
     private boolean disabled = false;
-
+    private static Pattern dbTargetPattern = Pattern.compile("/\\*(.*)\\*/(.*)");
+    
     protected static ComboPooledDataSource getDatasource() {
         DBConfig dbConfig = DB.getDBConfig(DBConfig.defaultDbConfigName, true);
         if (dbConfig==null) {
@@ -54,7 +57,6 @@ public class Evolutions extends PlayPlugin {
     }
 
     public static void main(String[] args) {
-
 
         /** Start the DB plugin **/
         Play.id = System.getProperty("play.id");
@@ -585,9 +587,22 @@ public class Evolutions extends PlayPlugin {
     // JDBC Utils
     static void execute(String sql) throws SQLException {
         Connection connection = null;
+        sql = sql.trim();
         try {
             connection = getNewConnection();
-            connection.createStatement().execute(sql);
+            
+            String dbName = connection.getMetaData().getDatabaseProductName();
+            String targetDbName = null;
+            
+            Matcher m = dbTargetPattern.matcher(sql);
+            if(m.matches()) {
+            	targetDbName = m.group(1);
+            	sql = m.group(2);
+            }
+            
+            if(targetDbName == null || targetDbName.equalsIgnoreCase(dbName)) {
+            	connection.createStatement().execute(sql);
+        	}
         } catch (SQLException e) {
             throw e;
         } finally {
