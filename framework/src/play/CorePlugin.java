@@ -77,7 +77,11 @@ public class CorePlugin extends PlayPlugin {
     public boolean rawInvocation(Request request, Response response) throws Exception {
         if (Play.mode == Mode.DEV && request.path.equals("/@kill")) {
             System.out.println("@KILLED");
-            System.exit(0);
+            if (Play.standalonePlayServer) {
+                System.exit(0);
+            } else {
+                Logger.error("Cannot execute @kill since Play is not running as standalone server");
+            }
         }
         if (request.path.equals("/@status") || request.path.equals("/@status.json")) {
             if(!Play.started) {
@@ -291,7 +295,9 @@ public class CorePlugin extends PlayPlugin {
             try {
                 long start = System.currentTimeMillis();
                 ((Enhancer) enhancer.newInstance()).enhanceThisClass(applicationClass);
-                Logger.trace("%sms to apply %s to %s", System.currentTimeMillis() - start, enhancer.getSimpleName(), applicationClass.name);
+                if (Logger.isTraceEnabled()) {
+                    Logger.trace("%sms to apply %s to %s", System.currentTimeMillis() - start, enhancer.getSimpleName(), applicationClass.name);
+                }
             } catch (Exception e) {
                 throw new UnexpectedException("While applying " + enhancer + " on " + applicationClass.name, e);
             }

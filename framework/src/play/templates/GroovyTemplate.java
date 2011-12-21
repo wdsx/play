@@ -17,6 +17,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 
+import org.apache.commons.lang.StringEscapeUtils;
 import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.CompilationUnit.GroovyClassOperation;
 import org.codehaus.groovy.control.CompilerConfiguration;
@@ -154,7 +155,9 @@ public class GroovyTemplate extends BaseTemplate {
                     }
                 }
 
-                Logger.trace("%sms to compile template %s to %d classes", System.currentTimeMillis() - start, name, groovyClassesForThisTemplate.size());
+                if (Logger.isTraceEnabled()) {
+                    Logger.trace("%sms to compile template %s to %d classes", System.currentTimeMillis() - start, name, groovyClassesForThisTemplate.size());
+                }
 
             } catch (MultipleCompilationErrorsException e) {
                 if (e.getErrorCollector().getLastError() != null) {
@@ -229,7 +232,9 @@ public class GroovyTemplate extends BaseTemplate {
             t.run();
             monitor.stop();
             monitor = null;
-            Logger.trace("%sms to render template %s", System.currentTimeMillis() - start, name);
+            if (Logger.isTraceEnabled()) {
+                Logger.trace("%sms to render template %s", System.currentTimeMillis() - start, name);
+            }
         } catch (NoRouteFoundException e) {
             if (e.isSourceAvailable()) {
                 throw e;
@@ -397,6 +402,11 @@ public class GroovyTemplate extends BaseTemplate {
                 if (val instanceof RawData) {
                     return ((RawData) val).data;
                 } else if (!template.name.endsWith(".html") || TagContext.hasParentTag("verbatim")) {
+                    if (template.name.endsWith(".xml")) {
+                        return StringEscapeUtils.escapeXml(val.toString());
+                    } else if (template.name.endsWith(".csv")) {
+                         return StringEscapeUtils.escapeCsv(val.toString());
+                    }
                     return val.toString();
                 } else {
                     return HTML.htmlEscape(val.toString());
@@ -407,6 +417,11 @@ public class GroovyTemplate extends BaseTemplate {
         }
 
         public String __getMessage(Object[] val) {
+            if (val==null) {
+                throw new NullPointerException("You are trying to resolve a message with an expression " +
+                        "that is resolved to null - " +
+                        "have you forgotten quotes around the message-key?");
+            }
             if (val.length == 1) {
                 return Messages.get(val[0]);
             } else {

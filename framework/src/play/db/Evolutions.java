@@ -469,13 +469,16 @@ public class Evolutions extends PlayPlugin {
         if (evolutionsDirectory.exists()) {
             for (File evolution : evolutionsDirectory.getRealFile().listFiles()) {
                 if (evolution.getName().matches("^[0-9]+[.]sql$")) {
-                    Logger.trace("Loading evolution %s", evolution);
+                    if (Logger.isTraceEnabled()) {
+                        Logger.trace("Loading evolution %s", evolution);
+                    }
+
                     int version = Integer.parseInt(evolution.getName().substring(0, evolution.getName().indexOf(".")));
                     String sql = IO.readContentAsString(evolution);
                     StringBuffer sql_up = new StringBuffer();
                     StringBuffer sql_down = new StringBuffer();
                     StringBuffer current = new StringBuffer();
-                    for (String line : sql.split("\n")) {
+                    for (String line : sql.split("\r?\n")) {
                         if (line.trim().matches("^#.*[!]Ups")) {
                             current = sql_up;
                         } else if (line.trim().matches("^#.*[!]Downs")) {

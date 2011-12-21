@@ -5,6 +5,7 @@ import java.io.File;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.mail.EmailAttachment;
 import org.apache.commons.mail.EmailException;
 import org.apache.commons.mail.HtmlEmail;
@@ -103,6 +104,14 @@ public class Application extends Controller {
         render(name);
     }
 
+    public static void helloWorld(String name) {
+        render("/Application/hello.html", name);
+    }
+
+    public static void helloSteph(String name) {
+        render("/Application/hello.html", name);
+    }
+
     public static void yop() {
         render();
     }
@@ -155,6 +164,14 @@ public class Application extends Controller {
             JPABinding.save(new Project("COLCOZ"));
         }
         renderText(def);
+    }
+
+    public static void jsRoute() {
+        render();
+    }
+
+    public static void jsRouteError() {
+        render();
     }
 
     public static void mail() {
@@ -274,4 +291,5 @@ public class Application extends Controller {
     public static void fastTag_render_test() {
         render();
     }
+
 }

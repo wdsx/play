@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URL;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -60,7 +61,6 @@ public class Play {
      * Is the application started
      */
     public static boolean started = false;
-
     /**
      * True when the one and only shutdown hook is enabled
      */
@@ -137,8 +137,6 @@ public class Play {
      * The very secret key
      */
     public static String secretKey;
-
-
     /**
      * pluginCollection that holds all loaded plugins and all enabled plugins..
      */
@@ -175,6 +173,12 @@ public class Play {
      * This is used as default encoding everywhere related to the web: request, response, WS
      */
     public static String defaultWebEncoding = "utf-8";
+
+    /**
+     * This flag indicates if the app is running in a standalone Play server or
+     * as a WAR in an applicationServer
+     */
+    public static boolean standalonePlayServer = true;
 
     /**
      * Init the framework
@@ -218,7 +222,11 @@ public class Play {
             if (!tmpDir.isAbsolute()) {
                 tmpDir = new File(applicationPath, tmpDir.getPath());
             }
-            Logger.trace("Using %s as tmp dir", Play.tmpDir);
+
+            if (Logger.isTraceEnabled()) {
+                Logger.trace("Using %s as tmp dir", Play.tmpDir);
+            }
+
             if (!tmpDir.exists()) {
                 try {
                     if (readOnlyTmp) {
@@ -244,7 +252,7 @@ public class Play {
         // Build basic java source path
         VirtualFile appRoot = VirtualFile.open(applicationPath);
         roots.add(appRoot);
-        javaPath = new ArrayList<VirtualFile>(2);
+        javaPath = new CopyOnWriteArrayList<VirtualFile>();
         javaPath.add(appRoot.child("app"));
         javaPath.add(appRoot.child("conf"));
 
@@ -325,45 +333,60 @@ public class Play {
         } catch (Exception e) {
             throw new UnexpectedException("Where is the framework ?", e);
         }
-	}
+    }
 
     /**
      * Read application.conf and resolve overriden key using the play id mechanism.
      */
     public static void readConfiguration() {
+        configuration = readOneConfigurationFile("application.conf", new HashSet<String>());
+        // Plugins
+        pluginCollection.onConfigurationRead();
+    }
+
+
+    private static Properties readOneConfigurationFile(String filename, Set<String> seenFileNames) {
+
+        if (seenFileNames.contains(filename)) {
+            throw new RuntimeException("Detected recursive @include usage. Have seen the file " + filename + " before");
+        }
+        seenFileNames.add(filename);
+
+        Properties propsFromFile=null;
+
         VirtualFile appRoot = VirtualFile.open(applicationPath);
-        conf = appRoot.child("conf/application.conf");
+        conf = appRoot.child("conf/" + filename);
         try {
-            configuration = IO.readUtf8Properties(conf.inputstream());
+            propsFromFile = IO.readUtf8Properties(conf.inputstream());
         } catch (RuntimeException e) {
             if (e.getCause() instanceof IOException) {
-                Logger.fatal("Cannot read application.conf");
-                System.exit(-1);
+                Logger.fatal("Cannot read "+filename);
+                fatalServerErrorOccurred();
             }
         }
         // OK, check for instance specifics configuration
         Properties newConfiguration = new OrderSafeProperties();
         Pattern pattern = Pattern.compile("^%([a-zA-Z0-9_\\-]+)\\.(.*)$");
-        for (Object key : configuration.keySet()) {
+        for (Object key : propsFromFile.keySet()) {
             Matcher matcher = pattern.matcher(key + "");
             if (!matcher.matches()) {
-                newConfiguration.put(key, configuration.get(key).toString().trim());
+                newConfiguration.put(key, propsFromFile.get(key).toString().trim());
             }
         }
-        for (Object key : configuration.keySet()) {
+        for (Object key : propsFromFile.keySet()) {
             Matcher matcher = pattern.matcher(key + "");
             if (matcher.matches()) {
                 String instance = matcher.group(1);
                 if (instance.equals(id)) {
-                    newConfiguration.put(matcher.group(2), configuration.get(key).toString().trim());
+                    newConfiguration.put(matcher.group(2), propsFromFile.get(key).toString().trim());
                 }
             }
         }
-        configuration = newConfiguration;
+        propsFromFile = newConfiguration;
         // Resolve ${..}
         pattern = Pattern.compile("\\$\\{([^}]+)}");
-        for (Object key : configuration.keySet()) {
-            String value = configuration.getProperty(key.toString());
+        for (Object key : propsFromFile.keySet()) {
+            String value = propsFromFile.getProperty(key.toString());
             Matcher matcher = pattern.matcher(value);
             StringBuffer newValue = new StringBuffer(100);
             while (matcher.find()) {
@@ -386,23 +409,23 @@ public class Play {
                 matcher.appendReplacement(newValue, r.replaceAll("\\\\", "\\\\\\\\"));
             }
             matcher.appendTail(newValue);
-            configuration.setProperty(key.toString(), newValue.toString());
+            propsFromFile.setProperty(key.toString(), newValue.toString());
         }
         // Include
         Map<Object, Object> toInclude = new HashMap<Object, Object>(16);
-        for (Object key : configuration.keySet()) {
+        for (Object key : propsFromFile.keySet()) {
             if (key.toString().startsWith("@include.")) {
                 try {
-                    toInclude.putAll(IO.readUtf8Properties(appRoot.child("conf/" + configuration.getProperty(key.toString())).inputstream()));
+                    String filenameToInclude = propsFromFile.getProperty(key.toString());
+                    toInclude.putAll( readOneConfigurationFile(filenameToInclude, seenFileNames) );
                 } catch (Exception ex) {
                     Logger.warn("Missing include: %s", key);
                 }
             }
         }
-        configuration.putAll(toInclude);
-        // Plugins
-        pluginCollection.onConfigurationRead();
+        propsFromFile.putAll(toInclude);
 
+        return propsFromFile;
     }
 
     /**
@@ -416,20 +439,17 @@ public class Play {
                 stop();
             }
 
-            if(!shutdownHookEnabled){
-                //registeres shutdown hook - New there's a good chance that we can notify
-                //our plugins that we're going down when some calls ctrl+c or just kills our process..
-                shutdownHookEnabled = true;
-
-                // Try to register shutdown-hook
-                try{
-                    Runtime.getRuntime().addShutdownHook( new Thread() {
-                        public void run(){
+            if( standalonePlayServer) {
+                // Can only register shutdown-hook if running as standalone server
+                if (!shutdownHookEnabled) {
+                    //registers shutdown hook - Now there's a good chance that we can notify
+                    //our plugins that we're going down when some calls ctrl+c or just kills our process..
+                    shutdownHookEnabled = true;
+                    Runtime.getRuntime().addShutdownHook(new Thread() {
+                        public void run() {
                             Play.stop();
                         }
                     });
-                } catch(Exception e) {
-                    Logger.trace("Got error while trying to register JVM-shutdownHook. Probably using GAE");
                 }
             }
 
@@ -552,11 +572,7 @@ public class Play {
                 return true;
             }
             Logger.error("Precompiled classes are missing!!");
-            try {
-                System.exit(-1);
-            } catch (Exception ex) {
-                // Will not work in some application servers
-            }
+            fatalServerErrorOccurred();
             return false;
         }
         try {
@@ -564,20 +580,23 @@ public class Play {
             Thread.currentThread().setContextClassLoader(Play.classloader);
             long start = System.currentTimeMillis();
             classloader.getAllClasses();
-            Logger.trace("%sms to precompile the Java stuff", System.currentTimeMillis() - start);
+
+            if (Logger.isTraceEnabled()) {
+                Logger.trace("%sms to precompile the Java stuff", System.currentTimeMillis() - start);
+            }
+
             if (!lazyLoadTemplates) {
                 start = System.currentTimeMillis();
                 TemplateLoader.getAllTemplate();
-                Logger.trace("%sms to precompile the templates", System.currentTimeMillis() - start);
+
+                if (Logger.isTraceEnabled()) {
+                    Logger.trace("%sms to precompile the templates", System.currentTimeMillis() - start);
+                }
             }
             return true;
         } catch (Throwable e) {
             Logger.error(e, "Cannot start in PROD mode with errors");
-            try {
-                System.exit(-1);
-            } catch (Exception ex) {
-                // Will not work in some application servers
-            }
+            fatalServerErrorOccurred();
             return false;
         }
     }
@@ -770,5 +789,21 @@ public class Play {
         return id.matches("test|test-?.*");
     }
     
+
+    /**
+     * Call this method when there has been a fatal error that Play cannot recover from
+     */
+    public static void fatalServerErrorOccurred() {
+        if (standalonePlayServer) {
+            // Just quit the process
+            System.exit(-1);
+        } else {
+            // Cannot quit the process while running inside an applicationServer
+            String msg = "A fatal server error occurred";
+            Logger.error(msg);
+            throw new Error(msg);
+        }
+    }
+
 
 }

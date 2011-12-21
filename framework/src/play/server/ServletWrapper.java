@@ -5,6 +5,7 @@ import play.Invoker;
 import play.Invoker.InvocationContext;
 import play.Logger;
 import play.Play;
+import play.data.binding.CachedBoundActionMethodArgs;
 import play.data.validation.Validation;
 import play.exceptions.PlayException;
 import play.exceptions.UnexpectedException;
@@ -62,6 +63,7 @@ public class ServletWrapper extends HttpServlet implements ServletContextListene
     private static boolean routerInitializedWithContext = false;
 
     public void contextInitialized(ServletContextEvent e) {
+        Play.standalonePlayServer = false;
         ClassLoader oldClassLoader = Thread.currentThread().getContextClassLoader();
         String appDir = e.getServletContext().getRealPath("/WEB-INF/application");
         File root = new File(appDir);
@@ -118,14 +120,21 @@ public class ServletWrapper extends HttpServlet implements ServletContextListene
             loadRouter(httpServletRequest.getContextPath());
         }
 
-        Logger.trace("ServletWrapper>service " + httpServletRequest.getRequestURI());
+        if (Logger.isTraceEnabled()) {
+            Logger.trace("ServletWrapper>service " + httpServletRequest.getRequestURI());
+        }
+
         Request request = null;
         try {
             Response response = new Response();
             response.out = new ByteArrayOutputStream();
             Response.current.set(response);
             request = parseRequest(httpServletRequest);
-            Logger.trace("ServletWrapper>service, request: " + request);
+
+            if (Logger.isTraceEnabled()) {
+                Logger.trace("ServletWrapper>service, request: " + request);
+            }
+
             boolean raw = Play.pluginCollection.rawInvocation(request, response);
             if (raw) {
                 copyResponse(Request.current(), Response.current(), httpServletRequest, httpServletResponse);
@@ -133,11 +142,15 @@ public class ServletWrapper extends HttpServlet implements ServletContextListene
                 Invoker.invokeInThread(new ServletInvocation(request, response, httpServletRequest, httpServletResponse));
             }
         } catch (NotFound e) {
-            Logger.trace("ServletWrapper>service, NotFound: " + e);
+            if (Logger.isTraceEnabled()) {
+                Logger.trace("ServletWrapper>service, NotFound: " + e);
+            }
             serve404(httpServletRequest, httpServletResponse, e);
             return;
         } catch (RenderStatic e) {
-            Logger.trace("ServletWrapper>service, RenderStatic: " + e);
+            if (Logger.isTraceEnabled()) {
+                Logger.trace("ServletWrapper>service, RenderStatic: " + e);
+            }
             serveStatic(httpServletResponse, httpServletRequest, e);
             return;
         } catch (Throwable e) {
@@ -150,6 +163,7 @@ public class ServletWrapper extends HttpServlet implements ServletContextListene
             Scope.Flash.current.remove();
             Scope.RenderArgs.current.remove();
             Scope.RouteArgs.current.remove();
+            CachedBoundActionMethodArgs.clear();
         }
     }
 
@@ -226,13 +240,13 @@ public class ServletWrapper extends HttpServlet implements ServletContextListene
 
         URI uri = new URI(httpServletRequest.getRequestURI());
         String method = httpServletRequest.getMethod().intern();
-        String path = uri.getRawPath();
-        if (path != null ) {
-            path = URLDecoder.decode(path, "utf-8");
-        }
+        String path = uri.getPath();
         String querystring = httpServletRequest.getQueryString() == null ? "" : httpServletRequest.getQueryString();
-        Logger.trace("httpServletRequest.getContextPath(): " + httpServletRequest.getContextPath());
-        Logger.trace("request.path: " + path + ", request.querystring: " + querystring);
+
+        if (Logger.isTraceEnabled()) {
+            Logger.trace("httpServletRequest.getContextPath(): " + httpServletRequest.getContextPath());
+            Logger.trace("request.path: " + path + ", request.querystring: " + querystring);
+        }
 
         String contentType = null;
         if (httpServletRequest.getHeader("Content-Type") != null) {

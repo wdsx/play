@@ -1,15 +1,5 @@
 package play.mvc;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import jregex.Matcher;
 import jregex.Pattern;
 import jregex.REFlags;
@@ -17,13 +7,21 @@ import org.apache.commons.lang.StringUtils;
 import play.Logger;
 import play.Play;
 import play.Play.Mode;
-import play.vfs.VirtualFile;
 import play.exceptions.NoRouteFoundException;
-import play.exceptions.UnexpectedException;
 import play.mvc.results.NotFound;
 import play.mvc.results.RenderStatic;
 import play.templates.TemplateLoader;
 import play.utils.Default;
+import play.utils.Utils;
+import play.vfs.VirtualFile;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * The router matches HTTP requests to action invocations
@@ -134,7 +132,9 @@ public class Router {
         route.addFormat(headers);
         route.addParams(params);
         route.compute();
-        Logger.trace("Adding [" + route.toString() + "] with params [" + params + "] and headers [" + headers + "]");
+        if (Logger.isTraceEnabled()) {
+            Logger.trace("Adding [" + route.toString() + "] with params [" + params + "] and headers [" + headers + "]");
+        }
         return route;
     }
 
@@ -229,7 +229,7 @@ public class Router {
     /**
      * All the loaded routes.
      */
-    public static List<Route> routes = new ArrayList<Route>(500);
+    public static List<Route> routes = new CopyOnWriteArrayList<Route>();
 
     public static void routeOnlyStatic(Http.Request request) {
         for (Route route : routes) {
@@ -249,12 +249,16 @@ public class Router {
     }
 
     public static Route route(Http.Request request) {
-        Logger.trace("Route: " + request.path + " - " + request.querystring);
+        if (Logger.isTraceEnabled()) {
+            Logger.trace("Route: " + request.path + " - " + request.querystring);
+        }
         // request method may be overriden if a x-http-method-override parameter is given
         if (request.querystring != null && methodOverride.matches(request.querystring)) {
             Matcher matcher = methodOverride.matcher(request.querystring);
             if (matcher.matches()) {
-                Logger.trace("request method %s overriden to %s ", request.method, matcher.group("method"));
+                if (Logger.isTraceEnabled()) {
+                    Logger.trace("request method %s overriden to %s ", request.method, matcher.group("method"));
+                }
                 request.method = matcher.group("method");
             }
         }
@@ -315,11 +319,27 @@ public class Router {
 
     public static String getFullUrl(String action, Map<String, Object> args) {
         ActionDefinition actionDefinition = reverse(action, args);
-        String base =  Http.Request.current() == null ? Play.configuration.getProperty("application.baseUrl", "application.baseUrl") : Http.Request.current().getBase();
+        String base = getBaseUrl();
         if (actionDefinition.method.equals("WS")) {
             return base.replaceFirst("https?", "ws") + actionDefinition;
         }
         return base + actionDefinition;
+    }
+
+    // Gets baseUrl from current request or application.baseUrl in application.conf
+    protected static String getBaseUrl() {
+        if (Http.Request.current() == null) {
+            // No current request is present - must get baseUrl from config
+            String appBaseUrl = Play.configuration.getProperty("application.baseUrl", "application.baseUrl");
+            if (appBaseUrl.endsWith("/")) {
+                // remove the trailing slash
+                appBaseUrl = appBaseUrl.substring(0, appBaseUrl.length()-1);
+            }
+            return appBaseUrl;
+
+        } else {
+            return Http.Request.current().getBase();
+        }
     }
 
     public static String getFullUrl(String action) {
@@ -353,7 +373,7 @@ public class Router {
                     }
                     if (absolute) {
                         boolean isSecure = Http.Request.current() == null ? false : Http.Request.current().secure;
-                        String base =  Http.Request.current() == null ? Play.configuration.getProperty("application.baseUrl", "application.baseUrl") : Http.Request.current().getBase();
+                        String base = getBaseUrl();
                         if (!StringUtils.isEmpty(route.host)) {
                             // Compute the host
                           int port = Http.Request.current() == null ? 80 : Http.Request.current().get().port;
@@ -379,7 +399,7 @@ public class Router {
 
     public static ActionDefinition reverse(String action, Map<String, Object> args) {
 
-        String encoding = Http.Response.current() == null ? "utf-8" : Http.Response.current().encoding;
+        String encoding = Http.Response.current() == null ? Play.defaultWebEncoding : Http.Response.current().encoding;
 
         if (action.startsWith("controllers.")) {
             action = action.substring(12);
@@ -464,18 +484,10 @@ public class Router {
                                 if (List.class.isAssignableFrom(value.getClass())) {
                                     @SuppressWarnings("unchecked")
                                     List<Object> vals = (List<Object>) value;
-                                    try {
-                                        path = path.replaceAll("\\{(<[^>]+>)?" + key + "\\}", URLEncoder.encode(vals.get(0).toString().replace("$", "\\$"), encoding));
-                                    } catch (UnsupportedEncodingException e) {
-                                        throw new UnexpectedException(e);
-                                    }
+                                    path = path.replaceAll("\\{(<[^>]+>)?" + key + "\\}", vals.get(0).toString()).replace("$", "\\$");
                                 } else {
-                                    try {
-                                        path = path.replaceAll("\\{(<[^>]+>)?" + key + "\\}", URLEncoder.encode(value.toString().replace("$", "\\$"), encoding).replace("%3A", ":").replace("%40", "@"));
-                                        host = host.replaceAll("\\{(<[^>]+>)?" + key + "\\}", URLEncoder.encode(value.toString().replace("$", "\\$"), encoding).replace("%3A", ":").replace("%40", "@"));
-                                    } catch (UnsupportedEncodingException e) {
-                                        throw new UnexpectedException(e);
-                                    }
+                                    path = path.replaceAll("\\{(<[^>]+>)?" + key + "\\}", value.toString().replace("$", "\\$").replace("%3A", ":").replace("%40", "@"));
+                                    host = host.replaceAll("\\{(<[^>]+>)?" + key + "\\}", value.toString().replace("$", "\\$").replace("%3A", ":").replace("%40", "@"));
                                 }
                             } else if (route.staticArgs.containsKey(key)) {
                                 // Do nothing -> The key is static
@@ -583,7 +595,7 @@ public class Router {
 
         public void absolute() {
             boolean isSecure = Http.Request.current() == null ? false : Http.Request.current().secure;
-            String base =  Http.Request.current() == null ? Play.configuration.getProperty("application.baseUrl", "application.baseUrl") : Http.Request.current().getBase();
+            String base = getBaseUrl();
             String hostPart = host;
             String domain = Http.Request.current() == null ? "" : Http.Request.current().get().domain;
             int port = Http.Request.current() == null ? 80 : Http.Request.current().get().port;
@@ -687,8 +699,10 @@ public class Router {
                     this.host = p.substring(0, p.indexOf("/"));
                     String pattern = host.replaceAll("\\.", "\\\\.").replaceAll("\\{.*\\}", "(.*)");
 
-                    Logger.trace("pattern [" + pattern + "]");
-                    Logger.trace("host [" + host + "]");
+                    if (Logger.isTraceEnabled()) {
+                        Logger.trace("pattern [" + pattern + "]");
+                        Logger.trace("host [" + host + "]");
+                    }
 
                     Matcher m = new Pattern(pattern).matcher(host);
                     this.hostPattern = new Pattern(pattern);
@@ -699,13 +713,18 @@ public class Router {
                             if (!name.equals("_")) {
                                 hostArg = new Arg();
                                 hostArg.name = name;
-                                Logger.trace("hostArg name [" + name + "]");
+                                if (Logger.isTraceEnabled()) {
+                                    Logger.trace("hostArg name [" + name + "]");
+                                }
                                 // The default value contains the route version of the host ie {client}.bla.com
                                 // It is temporary and it indicates it is an url route.
                                 // TODO Check that default value is actually used for other cases.
                                 hostArg.defaultValue = host;
                                 hostArg.constraint = new Pattern(".*");
-                                Logger.trace("adding hostArg [" + hostArg + "]");
+
+                                if (Logger.isTraceEnabled()) {
+                                    Logger.trace("adding hostArg [" + hostArg + "]");
+                                }
 
                                 args.add(hostArg);
                             }
@@ -826,7 +845,8 @@ public class Router {
                         }
                         try {
                             String root = new File(staticDir).getCanonicalPath();
-                            String childResourceName = staticDir + (staticFile ? "" : "/" + resource);
+                            String urlDecodedResource = Utils.urlDecodePath(resource);
+                            String childResourceName = staticDir + (staticFile ? "" : "/" + urlDecodedResource);
                             String child = new File(childResourceName).getCanonicalPath();
                             if (child.startsWith(root)) {
                                 throw new RenderStatic(childResourceName);
@@ -840,7 +860,7 @@ public class Router {
                             // FIXME: Careful with the arguments that are not matching as they are part of the hostname
                             // Defaultvalue indicates it is a one of these urls. This is a trick and should be changed.
                             if (arg.defaultValue == null) {
-                                localArgs.put(arg.name, matcher.group(arg.name));
+                               localArgs.put(arg.name, Utils.urlDecodePath(matcher.group(arg.name)));
                             }
                         }
                         if (hostArg != null && domain != null) {

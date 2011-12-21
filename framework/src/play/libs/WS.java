@@ -3,6 +3,7 @@ package play.libs;
 import java.io.File;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.Arrays;
@@ -162,14 +163,20 @@ public class WS extends PlayPlugin {
         String implementation = Play.configuration.getProperty("webservice", "async");
         if (implementation.equals("urlfetch")) {
             wsImpl = new WSUrlFetch();
-            Logger.trace("Using URLFetch for web service");
+            if (Logger.isTraceEnabled()) {
+                Logger.trace("Using URLFetch for web service");
+            }
         } else if (implementation.equals("async")) {
-            Logger.trace("Using Async for web service");
+            if (Logger.isTraceEnabled()) {
+                Logger.trace("Using Async for web service");
+            }
             wsImpl = new WSAsync();
         } else {
             try {
                 wsImpl = (WSImpl)Play.classloader.loadClass(implementation).newInstance();
-                Logger.trace("Using the class:" + implementation + " for web service");
+                if (Logger.isTraceEnabled()) {
+                    Logger.trace("Using the class:" + implementation + " for web service");
+                }
             } catch (Exception e) {
                 throw new RuntimeException("Unable to load the class: " + implementation + " for web service");
             }
@@ -239,7 +246,11 @@ public class WS extends PlayPlugin {
         }
 
         public WSRequest(String url, String encoding) {
-            this.url = url;
+            try {
+                this.url = new URI(url).toASCIIString();
+            } catch (Exception e) {
+                this.url = url;
+            }
             this.encoding = encoding;
         }
 
@@ -352,7 +363,7 @@ public class WS extends PlayPlugin {
          * @return the WSRequest for chaining.
          */
         public WSRequest setHeader(String name, String value) {
-            this.headers.put(name, value);
+            this.headers.put( HTTP.fixCaseForHttpHeader(name), value);
             return this;
         }
 
