@@ -282,7 +282,7 @@ public abstract class Binder {
             return;
         }
 
-        ParamNode paramNode = rootParamNode.getChild(name);
+        ParamNode paramNode = StringUtils.isEmpty(name) ? rootParamNode : rootParamNode.getChild(name);
 
         try {
             internalBindBean(paramNode, bean, new BindingAnnotations());
@@ -423,7 +423,16 @@ public abstract class Binder {
             List l = (List) r;
 
             // must get all indexes and sort them so we add items in correct order.
-            Set<String> indexes = new TreeSet<String>(paramNode.getAllChildrenKeys());
+            Set<String> indexes = new TreeSet<String>(new Comparator<String>() {
+                public int compare(String arg0, String arg1) {
+                    try {
+                        return Integer.parseInt(arg0) - Integer.parseInt(arg1);
+                    } catch (NumberFormatException e) {
+                        return arg0.compareTo(arg1);
+                    }
+                }
+            });
+            indexes.addAll(paramNode.getAllChildrenKeys());
 
             // get each value in correct order with index
 
@@ -552,12 +561,12 @@ public abstract class Binder {
         if (clazz.equals(String.class)) {
             return value;
         }
-        
+
         // Handles the case where the model property is a sole character
         if (clazz.equals(Character.class)) {
             return value.charAt(0);
         }
-        
+
         // Enums
         if (Enum.class.isAssignableFrom(clazz)) {
             return nullOrEmpty ? null : Enum.valueOf((Class<Enum>) clazz, value);
