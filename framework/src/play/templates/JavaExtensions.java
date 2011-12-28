@@ -237,11 +237,7 @@ public class JavaExtensions {
 
     public static String urlEncode(String entity) {
         try {
-            String encoding = play.Play.defaultWebEncoding;
-            if (Http.Response.current() != null) {
-                encoding = Http.Response.current().encoding;
-            }
-            return URLEncoder.encode(entity, encoding);
+            return URLEncoder.encode(entity, Http.Response.current().encoding);
         } catch (UnsupportedEncodingException e) {
             Logger.error(e, entity);
         }
